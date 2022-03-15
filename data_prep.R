@@ -40,10 +40,18 @@ Cot <- read_dta("Data/COTITZACIONS2020.dta",
   # get date formats
   mutate(alta = ymd(alta),
          baja = ymd(baja),
+         alta2 = baja,
+         # alta should precede baja.
+         # if it doesn't then we swap
+         swap_ = alta > baja,
+         alta = if_else(swap_, baja, alta),
+         baja = if_else(swap_, alta2, baja),
          baja = if_else(year(baja) > 2021, NA_Date_, baja),
-         duration = time_length(interval(alta,baja),unit="years"),
-         duration = ifelse(is.na(baja), 2021 - decimal_date(alta), duration)) %>% 
-  dplyr::filter(!is.na(alta)) 
+         baja = if_else(alta == baja, baja + 1, baja),
+         duration = my_date_diff(date_earlier = alta, date_later = baja)) %>% 
+  dplyr::filter(!is.na(alta),
+                !is.na(baja)) %>% 
+  select(-swap_, -alta2)
 
 # Join and keep all rows where we have a matching person id (IPF)
 LC1 <- 
@@ -134,64 +142,96 @@ LC1 <-
     TRUE ~ "unknown")) %>% 
   select(-TRL, -CNAE93, -CNAE_2009) %>% 
   mutate(causa = if_else(is.na(baja), 98, causa),
-         age_at_start = time_length(interval(dob,alta),unit="years")) %>% 
+         age_at_start = my_date_diff(date_earlier = dob, date_later = alta)) %>% 
   arrange(IPF, alta)
 
-# here we eliminate instances of ere, and similar
+# here we 
+# 1. eliminate instances of ere, 
+# and similar with delete_contained_unemp()
 # as long as they are fully within an envelope of another spell
-# This is required as a pre-step. Best done w parallel processing
-# but not strictly necessary. This takes 6.5 minutes on ca 37000 trajectories (1m initial episodes)
+# 2. add 1-day death episodes, truncating other episodes as needed
+# 3. infer inactivity spells between incoming episodes,
+# where a few types are inferred from causa or similar
+# 4. detect and merge runs of long term unemployment and inactivity 
+# (over 1yr threshold).
+
+# 28 min on laptop for ca 37000 trajectories
 tic()
 cluster <- new_cluster(7)
-cluster_copy(cluster, "delete_contained_unemp")
+cluster_copy(cluster, c("pad_inactivity","merge_ltu","my_date_diff","pad_deaths","delete_contained_unemp"))
 cluster_library(cluster,packages=c("tidyverse","lubridate"))
-LC2 <- 
+LC_padded <- 
   LC1 %>% 
   arrange(IPF,alta) %>% 
   group_by(IPF) %>% 
   partition(cluster) %>% 
-  do(delete_contained_unemp(X = .data)) %>% 
+  do(delete_contained_unemp(X = .data) %>% 
+     pad_deaths() %>% 
+     pad_inactivity() %>% 
+     merge_ltu()) %>% 
   collect() %>% 
   ungroup()
 toc()
 rm(cluster);gc()
-LC1 %>% nrow() / 
-LC2 %>% nrow()
-
-
-tic()
-cluster <- new_cluster(7)
-cluster_copy(cluster, "pad_inactivity")
-cluster_library(cluster,packages=c("tidyverse","lubridate"))
-LC_padded <- 
-  LC2 %>% 
-  arrange(IPF,alta) %>% 
-  group_by(IPF) %>% 
-  partition(cluster) %>% 
-  do(pad_inactivity(X = .data)) %>% 
-  collect() %>% 
-  ungroup()
-toc()
-
-rm(LC);gc()
+# rm(LC1,LC2);gc()
 
 # which states follow unemp
 
 # if unemp is approx 1 yr and followed by temp %in% c("no consta", "labor gap") then merge to
 # form temp = "ltu".
+LC1 %>% 
+  filter(temp == "unemp") %>% 
+  ggplot(aes(x=duration)) +
+  geom_density(bandwidth = .01,fill = gray(.5))+
+  xlim(0,5)
+LC1 %>% 
+  filter(temp == "unemp") %>% 
+  pull(duration) %>% 
+  cut(breaks = seq(0,35,by=5)) %>% table()
+LC_padded$duration %>% '=='(0) %>% sum()
+LC_padded %>% 
+  dplyr::filter(temp %in% c("unemp","ltu")) %>% 
+  ggplot(aes(y = temp, x = duration)) +
+  geom_density_ridges(fill = gray(.5),bandwidth=.01) +
+  xlim(0,5)
+LC_padded$temp %>% table()
+LC_padded %>% 
+  filter(temp == "ltu" & duration < 1)
+  X <-
+LC_padded %>% 
+  filter(IPF == 531) 
+
+  merge_ltu(X)
+  LC_padded %>% filter(temp == "unemp",
+                     duration < 1) %>% 
+  ggplot(aes(x=duration)) + 
+  geom_density(fill = gray(.5)) +
+  xlim(0,1)
 
 LC_padded %>% 
-  mutate(
-    baja = if_else(is.na(baja), dmy("31.12.2020"),baja),
-    duration =time_length(interval(alta,baja),unit="years")) %>% 
   group_by(IPF) %>% 
-  mutate(keep_ = any(temp == "unemp" & duration > .97 & lead(occ) == "inactivity")) %>% 
+  mutate(ltu = temp == "unemp" & duration > .97 & lead(temp) %in% c("no consta","labor gap") & !is.na(lead(occ)),
+         temp = if_else(ltu, "ltu", temp), 
+         dur_old = duration,
+         baja = if_else(ltu, lead(baja), baja),
+         duration = my_date_diff(date_earlier = alta, date_later = baja),
+         ltu_drop = lag(temp) == "ltu") %>% 
+  filter(temp == "ltu") %>% pull(duration) %>% sum()
   ungroup() %>% 
-  dplyr::filter(keep_) %>% 
-  pull(IPF) %>% unique() %>% length()
+  dplyr::filter(!ltu_drop,
+                temp %in% c("unemp","ltu")) %>% 
+  ggplot(aes(y = temp, x = duration)) +
+  geom_density_ridges(fill = gray(.5)) +
+  xlim(0,5)
 
 
-LC_padded$IPF %>% unique()
+LC_padded %>% filter(temp == "unemp",
+                     duration >= 1) %>% 
+  pull(duration) %>% 
+  cut(breaks = seq(0,40,by=5)) %>% table()
+
+
+LC_padded$IPF %>% unique() %>% length()
 tic()
 cluster <- new_cluster(7)
 cluster_copy(cluster, "discretize_trajectory")

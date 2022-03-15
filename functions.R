@@ -31,6 +31,10 @@ library(Spells)
 # 54 benefit ran up; 
 # 51 voluntary stop; 
 # 65 temporary sick/ disabled
+my_date_diff <- function(date_earlier, date_later){
+  date_later[is.na(date_later)] <- dmy("01.01.2021")
+  time_length(interval(date_earlier,date_later),unit="years")
+}
 
 # we should delete unemployment that is within a work spell.
 delete_contained_unemp <- function(X){
@@ -40,7 +44,7 @@ delete_contained_unemp <- function(X){
     # sort episodes
     arrange(alta) %>% 
     mutate(
-      baja = if_else(causa == 98, dmy("31.12.2020"), baja),
+      baja = if_else(causa == 98, dmy("01.01.2021"), baja),
       last_baja1 = lag(baja),
       last_baja2 = lag(baja,2),
       last_baja3 = lag(baja,3),
@@ -57,6 +61,47 @@ delete_contained_unemp <- function(X){
     bind_rows(dplyr::filter(X, temp != "unemp")) %>% 
     arrange(alta)
 }
+# X <- LC2 %>% filter(IPF == 991)
+
+pad_deaths <- function(X){
+  death_date <- X$dod[1]
+  X <- X %>% 
+    dplyr::filter(duration > 0)
+  if (is.na(death_date) & any(X$causa == 56)){
+    death_date <- X %>% 
+      dplyr::filter(causa == 56) %>% 
+      pull(baja) %>% 
+      '['(1) 
+  }
+  if (!is.na(death_date)){
+    death_row <- 
+      X %>% 
+      slice(n()) %>% 
+      mutate(dod = death_date,
+             alta = death_date,
+             baja = death_date + 1,
+             duration = my_date_diff(alta,baja),
+             temp = "dead")
+    # any later events?
+    X <-
+      X %>% 
+      mutate(alta = if_else(alta >= death_date, death_date, alta),
+             baja = if_else(baja >= death_date, death_date, baja),
+             duration = my_date_diff(alta, baja))
+    
+    if (sum(X$duration == 0) > 0){
+      IPF <- X$IPF[1]
+      warning(IPF, "has events after death\nthese are discarded")
+    }
+    
+    X <-
+      X %>% 
+      dplyr::filter(duration > 0) %>% 
+      bind_rows(death_row)
+  }
+  X
+}
+
 
 
 pad_inactivity <- function(X){
@@ -69,9 +114,8 @@ pad_inactivity <- function(X){
     # negatives are overlapping episodes which we don't handle here
     mutate(# gap = lead(alta) - baja,
       # test
-           gap = time_length(interval(baja,lead(alta)),unit="years"),
-           # special case for death = 1 day event
-           gap = ifelse(causa == 56, 1, gap),
+           # gap = time_length(interval(baja,lead(alta)),unit="years"),
+           gap = my_date_diff(date_earlier = baja, date_later = lead(alta)),
            next_alta = baja + gap,
            next_CCC = lead(CCC)) %>% 
     # only keep breaks with positive durations
@@ -96,8 +140,9 @@ pad_inactivity <- function(X){
                causa == 99 ~ "other"
              ),
              duration = gap,
-             age_at_start = decimal_date(alta) - decimal_date(dob))
+             age_at_start = my_date_diff(date_earlier = dob, date_later = alta))
   }
+  
   INAC %>% 
     select(any_of(colnames(X))) %>% 
     # append to incoming data
@@ -105,6 +150,46 @@ pad_inactivity <- function(X){
     arrange(alta)
 }
 
+# long term unemployment is coded after inactivity has been padded in
+merge_ltu <- function(X){
+  in_cols <- colnames(X)
+  X_aug <-
+    X %>% 
+    arrange(alta) %>% 
+    mutate(mergeable_maybe = temp %in% c("unemp", "no consta", "labor gap","other")) %>% 
+    group_by(yy = {yy = rle(mergeable_maybe); rep(seq_along(yy$lengths), yy$lengths)}) %>% 
+    mutate(has_unemp = any(temp == "unemp"),
+           duration_merge = sum(duration)) %>% 
+    ungroup() %>% 
+    select(-mergeable_maybe) %>% 
+    mutate(merge_these = has_unemp & duration_merge > 1)
+  
+  if (any(X_aug$merge_these)){
+  ltu <- X_aug %>% 
+    dplyr::filter(merge_these) %>% 
+    group_by(yy) %>% 
+    mutate(temp = "ltu",
+           alta = min(alta),
+           baja = max(baja),
+           duration = sum(duration),
+           sector = "unemployed",
+           part = "full",
+           occ = occ[occ!="inactivity"] %>% table() %>% sort(decreasing = TRUE) %>% names() %>% '['(1)) %>% 
+    slice(1) %>% 
+    ungroup() %>% 
+    select(any_of(in_cols)) 
+  
+  X_out <- 
+    X_aug %>% 
+    dplyr::filter(!merge_these) %>% 
+    select(any_of(in_cols)) %>% 
+    bind_rows(ltu) %>% 
+    arrange(alta)
+  } else {
+    X_out <- X
+  }
+  X_out
+}
 
 # This is the function that determines the state for each uniform discrete time step
 # it needs a new states called "precarious" and "instability" or similar, defined on the basis
