@@ -36,7 +36,7 @@ Cot <- read_dta("Data/COTITZACIONS2020.dta",
                                trabajadores,
                                TRL
                                ),
-                n_max = 1e6) %>% 
+                n_max = 3e5) %>% 
   # get date formats
   mutate(alta = ymd(alta),
          baja = ymd(baja),
@@ -175,63 +175,7 @@ toc()
 rm(cluster);gc()
 # rm(LC1,LC2);gc()
 
-# which states follow unemp
 
-# if unemp is approx 1 yr and followed by temp %in% c("no consta", "labor gap") then merge to
-# form temp = "ltu".
-LC1 %>% 
-  filter(temp == "unemp") %>% 
-  ggplot(aes(x=duration)) +
-  geom_density(bandwidth = .01,fill = gray(.5))+
-  xlim(0,5)
-LC1 %>% 
-  filter(temp == "unemp") %>% 
-  pull(duration) %>% 
-  cut(breaks = seq(0,35,by=5)) %>% table()
-LC_padded$duration %>% '=='(0) %>% sum()
-LC_padded %>% 
-  dplyr::filter(temp %in% c("unemp","ltu")) %>% 
-  ggplot(aes(y = temp, x = duration)) +
-  geom_density_ridges(fill = gray(.5),bandwidth=.01) +
-  xlim(0,5)
-LC_padded$temp %>% table()
-LC_padded %>% 
-  filter(temp == "ltu" & duration < 1)
-  X <-
-LC_padded %>% 
-  filter(IPF == 531) 
-
-  merge_ltu(X)
-  LC_padded %>% filter(temp == "unemp",
-                     duration < 1) %>% 
-  ggplot(aes(x=duration)) + 
-  geom_density(fill = gray(.5)) +
-  xlim(0,1)
-
-LC_padded %>% 
-  group_by(IPF) %>% 
-  mutate(ltu = temp == "unemp" & duration > .97 & lead(temp) %in% c("no consta","labor gap") & !is.na(lead(occ)),
-         temp = if_else(ltu, "ltu", temp), 
-         dur_old = duration,
-         baja = if_else(ltu, lead(baja), baja),
-         duration = my_date_diff(date_earlier = alta, date_later = baja),
-         ltu_drop = lag(temp) == "ltu") %>% 
-  filter(temp == "ltu") %>% pull(duration) %>% sum()
-  ungroup() %>% 
-  dplyr::filter(!ltu_drop,
-                temp %in% c("unemp","ltu")) %>% 
-  ggplot(aes(y = temp, x = duration)) +
-  geom_density_ridges(fill = gray(.5)) +
-  xlim(0,5)
-
-
-LC_padded %>% filter(temp == "unemp",
-                     duration >= 1) %>% 
-  pull(duration) %>% 
-  cut(breaks = seq(0,40,by=5)) %>% table()
-
-
-LC_padded$IPF %>% unique() %>% length()
 tic()
 cluster <- new_cluster(7)
 cluster_copy(cluster, "discretize_trajectory")
@@ -261,6 +205,68 @@ LC_discrete <- read_csv("Data/LC_discrete.csv")
 # using quarters only implies 15% growth in rows vis a vis
 # the original date (exact) trajectories. An acceptable penalty
 nrow(LC_discrete) / nrow(LC_padded)
+
+# ----------------------------------------------#
+## temporary/ experimental code from here down ##
+# ----------------------------------------------#
+
+# which states follow unemp
+
+# if unemp is approx 1 yr and followed by temp %in% c("no consta", "labor gap") then merge to
+# form temp = "ltu".
+LC1 %>% 
+  filter(temp == "unemp") %>% 
+  ggplot(aes(x=duration)) +
+  geom_density(bandwidth = .01,fill = gray(.5))+
+  xlim(0,5)
+LC1 %>% 
+  filter(temp == "unemp") %>% 
+  pull(duration) %>% 
+  cut(breaks = seq(0,35,by=5)) %>% table()
+LC_padded$duration %>% '=='(0) %>% sum()
+LC_padded %>% 
+  dplyr::filter(temp %in% c("unemp","ltu")) %>% 
+  ggplot(aes(y = temp, x = duration)) +
+  geom_density_ridges(fill = gray(.5),bandwidth=.01) +
+  xlim(0,5)
+LC_padded$temp %>% table()
+LC_padded %>% 
+  filter(temp == "ltu" & duration < 1)
+X <-
+  LC_padded %>% 
+  filter(IPF == 531) 
+
+merge_ltu(X)
+LC_padded %>% filter(temp == "unemp",
+                     duration < 1) %>% 
+  ggplot(aes(x=duration)) + 
+  geom_density(fill = gray(.5)) +
+  xlim(0,1)
+
+LC_padded %>% 
+  group_by(IPF) %>% 
+  mutate(ltu = temp == "unemp" & duration > .97 & lead(temp) %in% c("no consta","labor gap") & !is.na(lead(occ)),
+         temp = if_else(ltu, "ltu", temp), 
+         dur_old = duration,
+         baja = if_else(ltu, lead(baja), baja),
+         duration = my_date_diff(date_earlier = alta, date_later = baja),
+         ltu_drop = lag(temp) == "ltu") %>% 
+  filter(temp == "ltu") %>% pull(duration) %>% sum()
+ungroup() %>% 
+  dplyr::filter(!ltu_drop,
+                temp %in% c("unemp","ltu")) %>% 
+  ggplot(aes(y = temp, x = duration)) +
+  geom_density_ridges(fill = gray(.5)) +
+  xlim(0,5)
+
+
+LC_padded %>% filter(temp == "unemp",
+                     duration >= 1) %>% 
+  pull(duration) %>% 
+  cut(breaks = seq(0,40,by=5)) %>% table()
+
+
+LC_padded$IPF %>% unique() %>% length()
 
 remotes::install_github("timriffe/Spells/R/Spells", force = TRUE)
 # test applying alignments
