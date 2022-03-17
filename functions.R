@@ -191,6 +191,7 @@ merge_ltu <- function(X){
   X_out
 }
 
+# TODO
 # This is the function that determines the state for each uniform discrete time step
 # it needs a new states called "precarious" and "instability" or similar, defined on the basis
 # instability: nr transitions
@@ -307,7 +308,8 @@ discretize_trajectory <- function(X, step_size = 1/4){
 }
 
 
-# helper for conceptualizing
+# helper for conceptualizing, uses exact dates;
+# still needs color for "ltu"
 plot_traj_1 <- function(X){
   X %>% 
     group_by(IPF) %>% 
@@ -333,7 +335,8 @@ plot_traj_1 <- function(X){
                                 "care gap" = "#1952a8",
                                 "dead" = "red"))
 }
-
+# same thing, but uses discretized state steps
+# still needs color for "ltu"
 plot_traj_2 <- function(X){
   X %>% 
     group_by(IPF) %>% 
