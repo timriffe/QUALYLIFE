@@ -4,7 +4,7 @@ if (!"pacman" %in% rownames(installed.packages())){
   install.packages("pacman")
 }
 library(pacman)
-CRAN_packages <- c("haven","tidyverse","lubridate","tictoc","multidplyr","readr")
+CRAN_packages <- c("haven","tidyverse","lubridate","tictoc","multidplyr","readr","ggridges")
 
 # Install required CRAN packages if not available yet
 if(!sum(!p_isinstalled(CRAN_packages))==0) {
