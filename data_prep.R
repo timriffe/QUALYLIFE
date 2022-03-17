@@ -268,7 +268,7 @@ LC_padded %>% filter(temp == "unemp",
 
 LC_padded$IPF %>% unique() %>% length()
 
-remotes::install_github("timriffe/Spells/R/Spells", force = TRUE)
+# remotes::install_github("timriffe/Spells/R/Spells", force = TRUE)
 # test applying alignments
 library(Spells)
 LC_aligned <- 
