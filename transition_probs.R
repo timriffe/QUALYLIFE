@@ -71,13 +71,12 @@ B %>%
   filter(is.nan(p))
 all_ocup_isco_h
 pdf("Figs/all_ocup_isco_h_transitions.pdf")
-for (ocup in all_ocup_isco_h){
+
   for (st_from in all_state_from){
     for (st_to in all_state_to){
       chunk <- 
         B %>% 
-        filter(ocup_isco_h == ocup,
-               state_from == st_from,
+        filter(state_from == st_from,
                state_to == st_to)
       N <- chunk %>% pull(transitions) %>% sum()
       p <-
@@ -88,15 +87,14 @@ for (ocup in all_ocup_isco_h){
                    group = sex)) +
         geom_line() +
         scale_color_manual(values = c(Hombre = "blue", Mujer = "red")) +
-        geom_smooth() +
-        labs(title = paste0("ocup_isco_h = ",ocup,
-                            "\nfrom ", st_from,
+        #geom_smooth() +
+        labs(title = paste0("\nfrom ", st_from,
                             " to ", st_to),
-             subtitle = paste0("total transitions = ",N))
+             subtitle = paste0("total transitions = ",N)) +
+        facet_wrap(~ocup_isco_h)
       print(p)
     }
   }
-}
 dev.off()
 B %>% 
   filter(ocup_isco_h == "Routine",
@@ -127,29 +125,32 @@ A %>%
   count(sex, state_from, state_to, name = "transitions") %>% 
   pivot_wider(names_from = state_to, values_from = transitions) %>% 
   write_csv("Data/total_transitions.csv")
-
+all_state_from
 all_years - all_years %% 2
 all_year2 <- seq(2004,2020,by=2)
+all_ages <- 25:75
 D <-
-  A |>
-  mutate(year2 = year - year %% 2) |> 
+  A  %>% 
+  mutate(year2 = year - year %% 2)  %>% 
+  filter(!is.na(state_to)) %>% 
   count(year2, 
     sex, age_yr, ocup_isco_h, state_from, state_to,
-    name = "transitions") |> 
+    name = "transitions")  %>% 
   complete(year2 = all_year2,
     age_yr = all_ages,
     sex = all_sexes,
     ocup_isco_h = all_ocup_isco_h,
     state_from = all_state_to,
     state_to = all_state_to,
-    fill = list(transitions = 0)) |> 
-  add_count(#year, 
+    fill = list(transitions = 0)) %>%  
+  add_count(year2, 
     sex, age_yr, ocup_isco_h, state_from,
     name = "denom",
-    wt = transitions) |> 
+    wt = transitions)  %>% 
   mutate(p = transitions / denom,
-         p = if_else(transitions == 0, 0, p)) |> 
-  filter(between(age_yr, 25, 75))
+         p = if_else(transitions == 0, 0, p),
+         p = if_else(state_from == "Died" & state_to == "Died", 1, p)) %>% 
+  filter(between(age_yr, 25, 75)) 
 
 D %>% 
   filter(state_from == "Unemployed",
