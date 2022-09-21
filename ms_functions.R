@@ -1,4 +1,4 @@
-
+library(expm)
 # p<- D %>% 
 #   filter(year2 == 2006,
 #          sex == "Hombre",
@@ -49,19 +49,22 @@ pi_block_from_chunk <- function(chunk){
 #          state_from == "Disability")
 
 make_U <- function(data_chunk){
+  
+  # for purposes of explicit unnesting...
+states <- data_chunk$state_to %>% unique()
 
-  data_chunk %>% 
+data_chunk %>% 
     group_by(state_from, state_to) %>% 
     nest() %>% 
     mutate(data = map(data,~.x %>% pi_block_from_chunk %>% mutate(age = 25:76))) %>% 
     pivot_wider(names_from = state_from, values_from = data)  %>% 
-    unnest(cols = c(Died, Disability, `Disability-retirement`, Employed, Inactive, 
-                    Retired, Unemployed),
+   # unnest()
+    unnest(cols = states,
            names_sep = "") %>% 
     ungroup() %>% 
     rename(edad = Diedage) %>% 
     select(-ends_with("age")) %>% 
-    mutate(state_to = paste(state_to, edad,sep = "_")) %>% 
+    mutate(state_to = paste(state_to, edad, sep = "_")) %>% 
     select(-edad) %>% 
     column_to_rownames("state_to") %>% 
     as.matrix()
@@ -79,9 +82,10 @@ make_init <- function(data_chunk, lower = 25, upper = 29){
     mutate(state_from = paste0(state_from,paste0("_",lower))) %>% 
     pull(init, state_from)
 }
-make_lxs <- function(data_chunk, init_lower, init_upper){
+make_ex <- function(data_chunk, init_lower=25, init_upper=29){
   
   U <- data_chunk %>% 
+    # TR: this function is pure joy
     make_U()
   
   init <- rep(0, ncol(U))
@@ -90,51 +94,48 @@ make_lxs <- function(data_chunk, init_lower, init_upper){
   init_entries <- data_chunk %>% 
     make_init(lower = init_lower, 
               upper = init_upper)
-  init[names(init_entries)] <- 1
-  k<- length(init_entries)
-  for (i in 1:k){
-    kk <- names(init_entries)[k]
-    U[kk,kk] <- 1#init_entries[k]
-  }
+
+  # The only algebra we'll be seeing today...
+  N <- solve(I - U)
+  dimnames(N) <- dimnames(U)
   
-  n <- nrow(U) / length(init_entries)
-  # ones <- rep(1,length(init))
-  l_out <- (U %^% (n-1) ) %*% init
-  # I <- diag(rep(1,nrow(U)))
-  # N <- solve(I  - U)
-  # N %*% init
+  # The Dudel discount, always
+  # worthy of an annotation
+  N <- N - diag(N) / 2
   
-  any(colSums(U) > 1)
-  # U2 <- U  %^% 2
-  # U2[,"Employed_40"]
-  dim(l_out) <- c(n,length(init_entries))
-  l_out
   states <- 
     init_entries %>% 
     names() %>% 
     str_split(pattern = "_") %>% 
     lapply('[[',1) %>% 
     unlist()
-  colnames(l_out) <- states
+  init <- tibble(init = init_entries, from = states)
   
-  
-  l_out %>% 
-    as_tibble() %>% 
-    mutate(age = 25:76, .before = 1) %>% 
-    pivot_longer(-age, names_to = "state_to", values_to = "lxs")
+  N %>% 
+    as.data.frame() %>% 
+    rownames_to_column("to") %>% 
+    pivot_longer(-to, 
+                 names_to = "from", 
+                 values_to = "time") %>% 
+    separate(col = "to", 
+             sep = "_",
+             into = c("to","age2"),
+             convert = TRUE) %>% 
+    separate(col = "from", 
+             sep = "_",
+             into = c("from","age1"),
+             convert = TRUE) %>% 
+    dplyr::filter(age1 == init_lower,
+                  age2 >= age1,
+                  from != "Died",
+                  to != "Died") %>% 
+    group_by(from, to) %>% 
+    summarize(Ex_cond = sum(time), .groups = "drop") %>% 
+    left_join(init, by = "from") %>% 
+    mutate(Ex = Ex_cond * init) %>% 
+    group_by(to) %>% 
+    summarize(Ex = sum(Ex), .groups = "drop") %>% 
+    rename(state = to) %>% 
+    mutate(age = init_lower)
 }
-E <-
-D %>% 
-  group_by(ocup_isco_h,
-           sex,
-           year2) %>% 
-  group_modify(~make_lxs(data_chunk = .x, init_lower = 25, init_upper = 29))
 
-E %>% 
-  filter(state_to != "Died",
-         year2 < 2020) %>% 
-  group_by(state_to, sex, ocup_isco_h,year2) %>% 
-  summarize(ex = sum(lxs)) %>% 
-  ggplot(aes(x = year2, y = ex, color = ocup_isco_h, linetype = sex)) +
-  geom_line() +
-  facet_wrap(~state_to, scales = "free_y")

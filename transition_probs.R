@@ -3,6 +3,7 @@
 library(readr)
 library(tidyverse)
 library(janitor)
+library(magrittr)
 A <- read_csv("Data/Employment_trajectories2004-2020_v2.csv")
 A <-
   A %>% 
@@ -41,94 +42,25 @@ all_state_from  <- A %>% pull(state_from) %>% unique() %>% sort()
 all_state_to    <- A %>% pull(state_to) %>% unique() %>% sort()
 
 
-# B: ocup_isco_h, sex, year, age state_from, state_to
 
-B <-
-  A %>% 
-  count(#year, 
-        sex, age_yr, ocup_isco_h, state_from, state_to,
-        name = "transitions") %>% 
-  complete(#year = all_years,
-           age_yr = all_ages,
-           sex = all_sexes,
-           ocup_isco_h = all_ocup_isco_h,
-           
-           # Maybe we actually want to pad 0s for
-           # from_state = "Died", for sake of creating U 
-           # in elegant way
-           state_from = all_state_from,
-           state_to = all_state_to,
-           fill = list(transitions = 0)) %>% 
-  add_count(#year, 
-            sex, age_yr, ocup_isco_h, state_from,
-            name = "denom",
-            wt = transitions) %>% 
-  mutate(p = transitions / denom,
-         p = if_else(transitions == 0, 0, p)) %>% 
-  filter(between(age_yr, 25, 75))
-
-B %>% 
-  filter(is.nan(p))
-all_ocup_isco_h
-pdf("Figs/all_ocup_isco_h_transitions.pdf")
-
-  for (st_from in all_state_from){
-    for (st_to in all_state_to){
-      chunk <- 
-        B %>% 
-        filter(state_from == st_from,
-               state_to == st_to)
-      N <- chunk %>% pull(transitions) %>% sum()
-      p <-
-        chunk %>% 
-        ggplot(aes(x = age_yr,
-                   y = p,
-                   color = sex,
-                   group = sex)) +
-        geom_line() +
-        scale_color_manual(values = c(Hombre = "blue", Mujer = "red")) +
-        #geom_smooth() +
-        labs(title = paste0("\nfrom ", st_from,
-                            " to ", st_to),
-             subtitle = paste0("total transitions = ",N)) +
-        facet_wrap(~ocup_isco_h)
-      print(p)
-    }
-  }
-dev.off()
-B %>% 
-  filter(ocup_isco_h == "Routine",
-         state_from == "Disability",
-         state_to == "Died") %>% 
-  ggplot(aes(x = age_yr,
-             y = p,
-             color = sex,
-             group = sex)) +
-  geom_line() +
-  scale_color_manual(values = c(Hombre = "blue", Mujer = "red"))
+# B %>% 
+#   filter(is.nan(p))
+# all_ocup_isco_h
 
 
-B %>% colnames()
-A %>% colnames()
-A %>% pull(year) %>% range()
+# B %>% colnames()
+# A %>% colnames()
+# A %>% pull(year) %>% range()
 
-A %>% 
-  filter(state_to == "Died") %>% 
-  count(#year, 
-    sex, age_yr,
-    name = "transitions") %>% 
-  ggplot(aes(x = age_yr, y = transitions, fill = sex)) +
-  geom_col()
-  
 
-A %>% 
-  count(sex, state_from, state_to, name = "transitions") %>% 
-  pivot_wider(names_from = state_to, values_from = transitions) %>% 
-  write_csv("Data/total_transitions.csv")
-all_state_from
+
+
+
 all_years - all_years %% 2
 all_year2 <- seq(2004,2020,by=2)
 all_ages <- 25:75
+
+
 D <-
   A  %>% 
   mutate(year2 = year - year %% 2)  %>% 
@@ -152,12 +84,19 @@ D <-
          p = if_else(state_from == "Died" & state_to == "Died", 1, p)) %>% 
   filter(between(age_yr, 25, 75)) 
 
+D %>% pull(p) %>% '>'(1) %>% any()
 D %>% 
-  filter(state_from == "Unemployed",
-         state_to == "Inactive") %>% 
-  ggplot(aes(x = age_yr, y = p, color = sex, alpha = year2, group = interaction(sex,year2))) +
-  geom_line() +
-  facet_wrap(~ocup_isco_h)
+  group_by(year2,age_yr,sex,ocup_isco_h, state_from) %>% 
+  summarize(p = sum(p),.groups = "drop") %>% 
+  group_by(p) %>% 
+  summarize(n=n())
+
+# D %>% 
+#   filter(state_from == "Disability",
+#          state_to == "Inactive") %>% 
+#   ggplot(aes(x = age_yr, y = p, color = sex, alpha = year2, group = interaction(sex,year2))) +
+#   geom_line() +
+#   facet_wrap(~ocup_isco_h)
 
 
 
