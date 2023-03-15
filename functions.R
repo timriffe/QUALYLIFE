@@ -32,8 +32,8 @@ library(Spells)
 # 51 voluntary stop; 
 # 65 temporary sick/ disabled
 my_date_diff <- function(date_earlier, date_later){
-  date_later[is.na(date_later)] <- dmy("01.01.2021")
-  time_length(interval(date_earlier,date_later),unit="years")
+  date_later[is.na(date_later)] <- lubridate::dmy("01.01.2021")
+  lubridate::time_length(interval(date_earlier,date_later),unit="years")
 }
 
 # we should delete unemployment that is within a work spell.
