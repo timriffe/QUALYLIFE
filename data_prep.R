@@ -1,5 +1,7 @@
 source("functions.R")
 # Individual-level covariates for > 1million people
+# In <- read_dta("Data/MCVL2020PERSONA.dta")
+
 Per <- read_dta("Data/MCVL2020PERSONA.dta") %>% 
   dplyr::filter(sexe > 0) %>% 
   mutate(IPF = as.integer(ident),
@@ -17,6 +19,10 @@ Per <- read_dta("Data/MCVL2020PERSONA.dta") %>%
                          TRUE ~ "desconocido")) %>% 
   select(IPF, dob, sex = sexe, edu, dod, anynac)
 
+
+  
+
+
 # employment trajectories to be merged with the above
 Cot <- read_dta("Data/COTITZACIONS2020.dta",
                 # We explicitly select particular columns
@@ -27,7 +33,7 @@ Cot <- read_dta("Data/COTITZACIONS2020.dta",
                                grupo,
                                contrato,
                                parcial,
-                               alta, # date
+                               alta,  # date
                                baja,  # date
                                causa,
                                CCC,
@@ -202,6 +208,7 @@ rm(cluster);gc()
 readr::write_csv(LC_discrete, file = "Data/LC_discrete.csv")
 LC_discrete$IPF %>% unique() %>% length()
 LC_discrete <- read_csv("Data/LC_discrete.csv")
+LC_discrete
 # using quarters only implies 15% growth in rows vis a vis
 # the original date (exact) trajectories. An acceptable penalty
 nrow(LC_discrete) / nrow(LC_padded)
