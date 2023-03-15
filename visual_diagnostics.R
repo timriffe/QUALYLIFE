@@ -100,9 +100,10 @@ A %>%
   pivot_wider(names_from = state_to, values_from = transitions) %>% 
   write_csv("Data/total_transitions.csv")
 
+library(tidyverse)
 
-
-
+IN <- read_csv("Data/MCVL_2004-2020.csv", n_max = 100)
+IN %>% View()
 
 
 
