@@ -35,23 +35,25 @@ E30 <-
                         init_upper = 34))
 # quick look
 E30
-write_csv(E30,"Results/E30.csv")
+write_csv(E30,"Data/Results/E30.csv")
 # View provisional expectancies
 E30 <- read_csv("Data/Results/E30.csv")
+p30 <- 
 E30 %>% 
+  filter(state!="Retired") |> 
   #filter(year2 < 2020) %>% 
   mutate(state = factor(state, levels = c("Employed", "Unemployed","Inactive","Disability","Disability-retirement","Retired")),
          Gender = if_else(sex == "Hombre","Men","Women"),
          Ocupation = factor(ocup_H,levels = c("Managerial","Intermediate","Routine"))) %>% 
-  rename(`expected years (scales vary)` = Ex) %>% 
+  rename(`expected years, ages 30+ (scales vary)` = Ex) %>% 
   ggplot(aes(x = year, 
-             y = `expected years (scales vary)`, 
+             y = `expected years, ages 30+ (scales vary)`, 
              color = Ocupation, 
              linetype = Gender)) +
   geom_line() +
   facet_wrap(~state, scales = "free_y") +
   theme_minimal()
-
+ggsave("Figs/e30.svg",plot=p30, device="svg",width=20,height=8,units="in")
 
 E30 |> 
   group_by(year,sex,ocup_H) |> 
