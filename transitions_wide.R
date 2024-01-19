@@ -31,7 +31,7 @@ IN <- vroom("Data/MCVL_2004-2020_Feb16.zip", col_types = paste(rep("c",205),coll
 
 chunks_endpoints <- c(seq(0,nrow(IN),by=100000),nrow(IN))
 outL <- list()
-rm(INlong);gc()
+
 # IN |> 
 #   # didn't find replacement
 #   slice(200000:300000) |> 
@@ -136,9 +136,9 @@ for (i in 1:(length(chunks_endpoints)-1)){
           age = year - cohort + 1) |>
   fsubset(between(age,30,75)) |> 
     # couldn't get collapse::fcount to work
-  group_by(year,sex,age,ocup_H,statefrom,stateto) |> 
+  group_by(year,sex,age,ocup_H,ocup_R,statefrom,stateto) |> 
   count() |> 
-  fgroup_by(year,sex,age,ocup_H,statefrom) |> 
+  fgroup_by(year,sex,age,ocup_H,ocup_R,statefrom) |> 
   fmutate(N = sum(n)) |> 
   fungroup() 
 gc()
@@ -146,23 +146,30 @@ gc()
 # highest occup is the main one
 # sex, occup, year, ages 30 - 75
 
-transitions_semifinal <-
+transitions_semifinal_H <-
   outL |> 
   bind_rows() |> 
   group_by(year,sex,age,ocup_H,statefrom,stateto) |> 
   summarise(n=sum(n,na.rm=TRUE),
             N = sum(N),.groups = "drop")
+transitions_semifinal_R <-
+  outL |> 
+  bind_rows() |> 
+  group_by(year,sex,age,ocup_R,statefrom,stateto) |> 
+  summarise(n=sum(n,na.rm=TRUE),
+            N = sum(N),.groups = "drop")
 
+all_ocup_R    <- transitions_semifinal_R |> pull(ocup_R) |> unique()
 # need to pad the data with 0s where needed
-all_years     <- transitions_semifinal |> pull(year) |> unique()
-all_ages      <- transitions_semifinal |> pull(age) |> unique()
-all_ocup_H    <- transitions_semifinal |> pull(ocup_H) |> unique()
-all_statefrom <- transitions_semifinal |> pull(statefrom) |> unique()
-all_stateto   <- transitions_semifinal |> pull(stateto) |> unique()
-all_sexes     <- transitions_semifinal |> pull(sex) |> unique()
+all_years     <- transitions_semifinal_H |> pull(year) |> unique()
+all_ages      <- transitions_semifinal_H |> pull(age) |> unique()
+all_ocup_H    <- transitions_semifinal_H |> pull(ocup_H) |> unique()
+all_statefrom <- transitions_semifinal_H |> pull(statefrom) |> unique()
+all_stateto   <- transitions_semifinal_H |> pull(stateto) |> unique()
+all_sexes     <- transitions_semifinal_H |> pull(sex) |> unique()
 
-transitions_seemingly_final <-
-  transitions_semifinal |> 
+transitions_seemingly_final_H <-
+  transitions_semifinal_H |> 
   complete(year = all_years,
            age = all_ages,
            sex = all_sexes,
@@ -176,8 +183,68 @@ transitions_seemingly_final <-
   fmutate(p = n / N,
           p = replace_na(p, 0))
 
+transitions_seemingly_final_H |> 
+  write_csv("Data/transitions_H_18-01-2024.csv")
+
+transitions_seemingly_final_R <-
+  transitions_semifinal_R |> 
+  complete(year = all_years,
+           age = all_ages,
+           sex = all_sexes,
+           ocup_R = all_ocup_R,
+           statefrom = all_statefrom,
+           stateto = all_stateto,
+           fill = list(n=0)) |> 
+  group_by(year,sex,age,ocup_R,statefrom) |> 
+  fmutate(N = sum(n)) |> 
+  ungroup() |> 
+  fmutate(p = n / N,
+          p = replace_na(p, 0))
+
+transitions_seemingly_final_R |> 
+  write_csv("Data/transitions_R_18-01-2024.csv")
+
+
+transitions_seemingly_final_R |> 
+  filter(stateto == "Died")
+
+transitions_seemingly_final_R <- 
+  transitions_seemingly_final_R |> 
+  mutate(ocup_type = "most recent", .before = ocup_R) |> 
+  rename(ocup = ocup_R)
+transitions_seemingly_final_H <- 
+  transitions_seemingly_final_H |> 
+  mutate(ocup_type = "highest", .before = ocup_H) |> 
+  rename(ocup = ocup_H)
+transitions_seemingly_final <- 
+  bind_rows(transitions_seemingly_final_R,
+            transitions_seemingly_final_H)
+
 transitions_seemingly_final |> 
-  write_csv("Data/transitions_13-3-2023.csv")
+  write_csv("Data/transitions_RH_18-01-2024.csv")
+
+transitions_seemingly_final$stateto |> unique()
+transitions_seemingly_final |> 
+  filter(year == 2021,
+         stateto == "Employed",
+         statefrom == "Died") |> 
+  ggplot(aes(x=age, y = p, color = ocup_type, linetype = sex)) +
+  geom_line() +
+  facet_wrap(~ocup)
+
+# transitions_seemingly_final |> 
+#   filter(stateto == "Disability-retirement",
+#          ocup_type == "most recent") |> 
+#   group_by(year, statefrom) |> 
+#   summarize(n = sum(n),
+#             N = sum(N),
+#             .groups = "drop") |>
+#   mutate(CDR = n / N) |> 
+#   ggplot(aes(x=year, y = n, color = statefrom)) +
+#   geom_line() +
+#   labs(title = "total deaths by year and state",
+#        y = "deaths") +
+#   theme_minimal() 
 
 read_csv("Data/transitions_13-3-2023.csv", show_col_types = FALSE) |> 
   group_by(statefrom, stateto) |> 
